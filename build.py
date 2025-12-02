@@ -29,12 +29,17 @@ class UVMBuilder:
     <script type="text/javascript" src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
     <style>
         body{font-family:Arial;margin:20px;background:#f5f5f5}
-        .container{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+        .container{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
         .panel{background:white;padding:15px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
         textarea{width:100%;height:250px;font-family:monospace;padding:10px;border:1px solid #ddd}
         button{background:#0078D7;color:white;border:none;padding:8px 15px;margin:5px;border-radius:5px;cursor:pointer}
         .output{background:#1e1e1e;color:#d4d4d4;padding:10px;height:250px;overflow:auto;font-family:monospace;white-space:pre-wrap}
         .status{padding:10px;background:#e8f4fd;border-radius:5px;margin:10px 0}
+        .memory-dump{background:#f9f9f9;padding:10px;height:250px;overflow:auto;font-family:monospace;white-space:pre-wrap;border:1px solid #ddd}
+        .dump-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+        .dump-title{font-weight:bold;color:#333}
+        .btn-small{background:#28a745;font-size:12px;padding:5px 10px}
+        .btn-dump{background:#6f42c1;}
     </style>
 </head>
 <body>
@@ -50,6 +55,7 @@ class UVMBuilder:
             <div>
                 <button onclick="assemble()" id="asmBtn" disabled>▶ Ассемблировать</button>
                 <button onclick="runTests()" id="testBtn" disabled>🧪 Тесты</button>
+                <button onclick="executeAndDump()" id="dumpBtn" disabled class="btn-dump">💾 Выполнить и дамп</button>
             </div>
         </div>
         
@@ -57,10 +63,29 @@ class UVMBuilder:
             <h3>📊 Результаты ассемблирования</h3>
             <div id="output" class="output">// Здесь будет результат</div>
         </div>
+        
+        <div class="panel">
+            <div class="dump-header">
+                <h3>🧠 Дамп памяти</h3>
+                <button onclick="clearMemoryDump()" class="btn-small">Очистить</button>
+            </div>
+            <div id="memoryDump" class="memory-dump">
+                // Здесь будет дамп памяти<br>
+                // Нажмите "Выполнить и дамп"
+            </div>
+            <div style="margin-top:10px;">
+                <label for="dumpRange">Диапазон адресов: </label>
+                <input type="text" id="dumpRange" value="0-255" style="width:100px;">
+                <button onclick="dumpMemoryRange()" class="btn-small">Дамп диапазона</button>
+            </div>
+        </div>
     </div>
 
     <script>
         let pyodide;
+        let memory = new Array(65536).fill(0); // 64K памяти
+        let bytecode = null;
+        
         let pyCode = `
 def mask(bits):
     return (1 << bits) - 1
@@ -117,7 +142,7 @@ def assemble_text(text):
             elif op == 'max':
                 bytecode += create_command(7, {'addr_b': cmd['addr_b'], 'addr_c': cmd['addr_c'], 'addr_d': cmd['addr_d']})
         except Exception as e:
-            return f"Ошибка: {e}"
+            return f"Ошибка: {e}", b''
     
     result = "✅ Ассемблировано!\\\\n"
     result += f"Размер: {len(bytecode)} байт\\\\n\\\\n"
@@ -127,6 +152,66 @@ def assemble_text(text):
         hex_bytes = [f'0x{b:02X}' for b in chunk]
         result += f"Команда {i//7}: {', '.join(hex_bytes)}\\\\n"
     
+    return result, bytecode
+
+def execute_bytecode(bytecode_hex, memory_state):
+    import struct
+    
+    # Конвертируем hex строку обратно в bytes
+    bytecode = bytes.fromhex(bytecode_hex)
+    
+    # Инициализируем память из переданного состояния
+    memory = memory_state.copy()
+    
+    operations = []
+    
+    # Выполняем команды
+    for i in range(0, len(bytecode), 7):
+        cmd_bytes = bytecode[i:i+7]
+        if len(cmd_bytes) < 7:
+            continue
+            
+        # Разбираем команду
+        cmd_int = int.from_bytes(cmd_bytes, 'little')
+        op_code = cmd_int & 0x1F
+        
+        if op_code == 19:  # load_const
+            address = (cmd_int >> 5) & 0xFFFF
+            constant = (cmd_int >> 21) & 0xFFFFF
+            if address < len(memory):
+                memory[address] = constant
+                operations.append(f"Загружено {constant} в адрес {address}")
+        
+        elif op_code == 3:  # read
+            dst_addr = (cmd_int >> 5) & 0xFFFF
+            src_addr = (cmd_int >> 21) & 0xFFFF
+            if src_addr < len(memory) and dst_addr < len(memory):
+                memory[dst_addr] = memory[src_addr]
+                operations.append(f"Скопировано из {src_addr} в {dst_addr}")
+        
+        elif op_code == 7:  # max
+            addr_b = (cmd_int >> 5) & 0xFFFF
+            addr_c = (cmd_int >> 21) & 0xFFFF
+            addr_d = (cmd_int >> 37) & 0xFFFF
+            
+            if addr_b < len(memory) and addr_c < len(memory) and addr_d < len(memory):
+                max_val = max(memory[addr_b], memory[addr_c])
+                memory[addr_d] = max_val
+                operations.append(f"MAX({memory[addr_b]}, {memory[addr_c]}) = {max_val} в {addr_d}")
+    
+    return memory, operations
+
+def get_memory_dump(memory, start=0, end=255):
+    result = ""
+    for i in range(start, min(end + 1, len(memory)), 16):
+        line = f"{i:04X}: "
+        for j in range(16):
+            addr = i + j
+            if addr <= end and addr < len(memory):
+                line += f"{memory[addr]:04X} "
+            else:
+                line += "     "
+        result += line + "\\\\n"
     return result
 
 def test_spec():
@@ -171,6 +256,7 @@ def test_spec():
                 document.getElementById('status').innerHTML = '✅ Python загружен! Можно работать.';
                 document.getElementById('asmBtn').disabled = false;
                 document.getElementById('testBtn').disabled = false;
+                document.getElementById('dumpBtn').disabled = false;
                 
             } catch (error) {
                 document.getElementById('status').innerHTML = `❌ Ошибка: ${error}`;
@@ -184,12 +270,94 @@ def test_spec():
             try {
                 // Запускаем Python функцию
                 const result = await pyodide.runPythonAsync(`assemble_text("""${code}""")`);
-                document.getElementById('output').textContent = result;
+                const [text, bc] = result;
+                bytecode = bc;
+                document.getElementById('output').textContent = text;
                 document.getElementById('status').innerHTML = '✅ Готово!';
             } catch (error) {
                 document.getElementById('output').textContent = `Ошибка: ${error}`;
                 document.getElementById('status').innerHTML = '❌ Ошибка ассемблирования';
             }
+        }
+
+        async function executeAndDump() {
+            if (!bytecode) {
+                alert('Сначала скомпилируйте программу!');
+                return;
+            }
+            
+            document.getElementById('status').innerHTML = '⚡ Выполнение и дамп памяти...';
+            
+            try {
+                // Конвертируем bytecode в hex для передачи в Python
+                const bytecodeHex = Array.from(new Uint8Array(bytecode)).map(b => b.toString(16).padStart(2, '0')).join('');
+                
+                // Выполняем программу
+                const result = await pyodide.runPythonAsync(`
+memory, ops = execute_bytecode("${bytecodeHex}", ${JSON.stringify(memory)})
+dump = get_memory_dump(memory, 0, 255)
+ops_text = "\\\\n".join(ops) if ops else "Нет операций записи"
+(dump, ops_text, memory)
+`);
+                
+                // Обновляем глобальное состояние памяти
+                memory = result[2];
+                
+                // Показываем дамп
+                const dumpText = result[0];
+                const opsText = result[1];
+                
+                document.getElementById('memoryDump').innerHTML = 
+                    `<span style="color:#28a745">Выполненные операции:</span><br>${opsText}<br><br>` +
+                    `<span style="color:#0078D7">Дамп памяти (0-255):</span><br><pre>${dumpText}</pre>`;
+                
+                document.getElementById('status').innerHTML = '✅ Выполнение завершено!';
+                
+            } catch (error) {
+                document.getElementById('memoryDump').innerHTML = `Ошибка выполнения: ${error}`;
+                document.getElementById('status').innerHTML = '❌ Ошибка выполнения';
+            }
+        }
+
+        async function dumpMemoryRange() {
+            const rangeInput = document.getElementById('dumpRange').value;
+            let start = 0, end = 255;
+            
+            try {
+                const parts = rangeInput.split('-');
+                if (parts.length === 2) {
+                    start = parseInt(parts[0]);
+                    end = parseInt(parts[1]);
+                } else if (parts.length === 1) {
+                    end = parseInt(parts[0]);
+                }
+            } catch (e) {
+                alert('Неверный формат диапазона. Используйте "0-255"');
+                return;
+            }
+            
+            if (isNaN(start) || isNaN(end) || start < 0 || end >= memory.length || start > end) {
+                alert('Неверный диапазон адресов');
+                return;
+            }
+            
+            document.getElementById('status').innerHTML = `📊 Дамп памяти ${start}-${end}...`;
+            
+            try {
+                const dump = await pyodide.runPythonAsync(`get_memory_dump(${JSON.stringify(memory)}, ${start}, ${end})`);
+                document.getElementById('memoryDump').innerHTML = 
+                    `<span style="color:#0078D7">Дамп памяти (${start}-${end}):</span><br><pre>${dump}</pre>`;
+                document.getElementById('status').innerHTML = '✅ Дамп готов!';
+            } catch (error) {
+                document.getElementById('memoryDump').innerHTML = `Ошибка дампа: ${error}`;
+            }
+        }
+
+        function clearMemoryDump() {
+            document.getElementById('memoryDump').innerHTML = 
+                '// Дамп памяти очищен<br>' +
+                '// Нажмите "Выполнить и дамп" для получения нового дампа';
+            document.getElementById('status').innerHTML = '🧹 Дамп памяти очищен';
         }
 
         async function runTests() {
@@ -246,6 +414,7 @@ def test_spec():
         print("🌐 Веб-версия: dist/web/index.html")
         print("💻 GUI: python uvm_gui.py")
         print("\n🚀 Веб-версия использует реальный Python в браузере!")
+        print("💾 Добавлена возможность дампа памяти!")
 
 if __name__ == "__main__":
     UVMBuilder().build_all()
