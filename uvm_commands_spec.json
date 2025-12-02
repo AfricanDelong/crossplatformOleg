@@ -1,0 +1,49 @@
+{
+  "command_specification": {
+    "arch": "UVM (Условная Вычислительная Машина)",
+    "version": "1.0",
+    "word_size": 16,
+    "register_count": 16,
+    "addressing_modes": {
+      "REGISTER": {"code": 0, "description": "Прямая регистровая адресация"},
+      "IMMEDIATE": {"code": 1, "description": "Непосредственная адресация"},
+      "INDIRECT": {"code": 2, "description": "Косвенная адресация"},
+      "INDEXED": {"code": 3, "description": "Индексная адресация"}
+    },
+    "commands": [
+      {"mnemonic": "NOP", "opcode": 0, "format": "no_operand", "description": "Пустая операция"},
+      {"mnemonic": "HALT", "opcode": 1, "format": "no_operand", "description": "Остановка процессора"},
+      {"mnemonic": "MOV", "opcode": 2, "format": "two_operand", "description": "Пересылка данных"},
+      {"mnemonic": "ADD", "opcode": 3, "format": "two_operand", "description": "Сложение"},
+      {"mnemonic": "SUB", "opcode": 4, "format": "two_operand", "description": "Вычитание"},
+      {"mnemonic": "MUL", "opcode": 5, "format": "two_operand", "description": "Умножение"},
+      {"mnemonic": "DIV", "opcode": 6, "format": "two_operand", "description": "Деление"},
+      {"mnemonic": "AND", "opcode": 7, "format": "two_operand", "description": "Логическое И"},
+      {"mnemonic": "OR", "opcode": 8, "format": "two_operand", "description": "Логическое ИЛИ"},
+      {"mnemonic": "XOR", "opcode": 9, "format": "two_operand", "description": "Логическое исключающее ИЛИ"},
+      {"mnemonic": "NOT", "opcode": 10, "format": "one_operand", "description": "Логическое НЕ"},
+      {"mnemonic": "SHL", "opcode": 11, "format": "two_operand", "description": "Сдвиг влево"},
+      {"mnemonic": "SHR", "opcode": 12, "format": "two_operand", "description": "Сдвиг вправо"},
+      {"mnemonic": "CMP", "opcode": 13, "format": "two_operand", "description": "Сравнение"},
+      {"mnemonic": "JMP", "opcode": 14, "format": "one_operand", "description": "Безусловный переход"},
+      {"mnemonic": "JZ", "opcode": 15, "format": "one_operand", "description": "Переход если ноль"},
+      {"mnemonic": "JNZ", "opcode": 16, "format": "one_operand", "description": "Переход если не ноль"},
+      {"mnemonic": "JC", "opcode": 17, "format": "one_operand", "description": "Переход если перенос"},
+      {"mnemonic": "JNC", "opcode": 18, "format": "one_operand", "description": "Переход если нет переноса"},
+      {"mnemonic": "CALL", "opcode": 19, "format": "one_operand", "description": "Вызов подпрограммы"},
+      {"mnemonic": "RET", "opcode": 20, "format": "no_operand", "description": "Возврат из подпрограммы"},
+      {"mnemonic": "PUSH", "opcode": 21, "format": "one_operand", "description": "Поместить в стек"},
+      {"mnemonic": "POP", "opcode": 22, "format": "one_operand", "description": "Извлечь из стека"},
+      {"mnemonic": "LOAD", "opcode": 23, "format": "two_operand", "description": "Загрузка из памяти"},
+      {"mnemonic": "STORE", "opcode": 24, "format": "two_operand", "description": "Сохранение в память"},
+      {"mnemonic": "IN", "opcode": 25, "format": "one_operand", "description": "Ввод из порта"},
+      {"mnemonic": "OUT", "opcode": 26, "format": "one_operand", "description": "Вывод в порт"}
+    ],
+    "registers": {
+      "R0-R12": "Общего назначения",
+      "R13": "FLAGS - регистр флагов",
+      "R14": "SP - указатель стека",
+      "R15": "PC - счетчик команд"
+    }
+  }
+}
